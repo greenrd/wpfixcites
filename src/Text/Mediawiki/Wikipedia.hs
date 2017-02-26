@@ -14,8 +14,9 @@ import Data.Tree.NTree.TypeDefs (NTree(..))
 import Network.Mediawiki.API (parseTree)
 import Network.Mediawiki.API.Lowlevel (APIConnection(..), defaultEndpoint)
 import Network.HTTP.Client
-       (defaultManagerSettings, getUri, hrFinalRequest, Manager, newManager, parseRequest,
+       (getUri, hrFinalRequest, Manager, newManager, parseRequest,
         responseHeaders, withResponseHistory)
+import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.URI (URI, uriToString)
 import Network.Wreq.Session (Session, withAPISession)
 import Text.Mediawiki.ParseTree
@@ -67,7 +68,7 @@ resolveDOI manager doi = redirectTarget $ "http://dx.doi.org/" ++ doi
 fixCites :: String -> Text -> IO [Text]
 fixCites urlPrefix pageName = withAPISession $ \session' ->
   do
-    manager <- newManager defaultManagerSettings
+    manager <- newManager tlsManagerSettings
     xmlTree <- runReaderT (parseTree pageName) $ APIConnection defaultEndpoint id session'
     let templateXml = findElements (hasLocalName "template") xmlTree
         templateCalls = mapMaybe unpickleL templateXml

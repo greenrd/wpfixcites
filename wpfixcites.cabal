@@ -25,6 +25,7 @@ library
                      , classy-prelude >= 1.2.0
                      , concurrent-machines >= 0.2.3.3 && < 0.3
                      , http-client >= 0.4.31.2 && < 0.5
+                     , http-client-tls
                      , hxt >= 9.3.1.16 && < 9.4
                      , lens >= 4.13 && <4.14
                      , lens-aeson
