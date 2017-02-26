@@ -24,7 +24,7 @@ myArgParser = WpFixCitesArgs <$> urlPrefixOption <*> pageNameArg
 main :: IO ()
 main = do
   args <- execParser . info (helper <*> myArgParser) $
-    fullDesc <> progDesc "Edit FILE.json in a structured way" <>
-    header "sahje - Schema Aware Haskell JSON Editor"
+    fullDesc <> progDesc "Fixes broken citations on Wikipedia" <>
+    header "wpfixcites"
   fixed <- fixCites (urlPrefix args) . pack $ pageName args
   mapM_ putStr fixed
