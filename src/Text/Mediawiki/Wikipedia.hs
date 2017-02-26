@@ -54,9 +54,6 @@ applyFix (Path (h:t), newString) (NTree content children) =
     where
       (before, focus : after) = splitAt h children
 
-maxRedirects :: Int
-maxRedirects = 10
-
 resolveDOI :: Manager -> String -> IO URI
 resolveDOI manager doi = redirectTarget $ "http://dx.doi.org/" ++ doi
   where
