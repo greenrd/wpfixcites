@@ -1,15 +1,26 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE NamedFieldPuns #-}
 module Text.Mediawiki.Wikipedia (fixCites) where
 
 import ClassyPrelude
-import Control.Lens ((^?))
+import Control.Lens.Fold ((^?))
+import Control.Lens.Iso (reversed)
+import Control.Lens.Operators ((&))
+import Control.Lens.Prism (_Just)
+import Control.Lens.Setter ((%~))
+import Control.Lens.TH (abbreviatedFields, makeLensesFor, makeLensesWith)
+import Control.Lens.Tuple (_2)
 import qualified Data.ByteString.Char8 as C
 import Data.Char (isSpace)
 import Data.Machine (construct, runT, SourceT, yield)
 import Data.Machine.Concurrent.Scatter (scatter)
+import Data.Monoid (Endo(..))
 import Data.Text (strip)
+import Data.Text.Lens (packed)
 import Data.Tree.NTree.TypeDefs (NTree(..))
 import Network.Mediawiki.API (parseTree)
 import Network.Mediawiki.API.Lowlevel (APIConnection(..), defaultEndpoint)
@@ -17,11 +28,14 @@ import Network.HTTP.Client
        (getUri, hrFinalRequest, Manager, newManager, parseRequest,
         responseHeaders, withResponseHistory)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
-import Network.URI (URI, uriToString)
+import Network.URI (URI(..), URIAuth(..), uriToString)
 import Network.Wreq.Session (Session, withAPISession)
 import Text.Mediawiki.ParseTree
 import Text.XML.HXT.PathFinder (findElements, hasLocalName, LocatedTree(..), Path(..))
 import Text.XML.HXT.DOM.TypeDefs (XmlTree, XNode(..))
+
+makeLensesFor [("uriAuthority", "authority")] ''URI
+makeLensesWith abbreviatedFields ''URIAuth
 
 data CiteJournal = CiteJournal { url :: String
                                , doi :: String
@@ -76,20 +90,36 @@ fixCites urlPrefix pageName = withAPISession $ \session' ->
         needFixing = extractL <$> filter ((urlPrefix `isPrefixOf`) . snd . urlL) citeJournals
         genSource :: CiteJournal -> SourceT IO String
         genSource CiteJournal { doi, url } = construct $ do
-          newUrl <- liftIO . resolveDOI manager . unpack . strip $ pack doi
+          newUrl <- liftIO . resolveDOI manager $ doi & packed %~ strip
           yield $ substPreservingWS newUrl url
-    fixedUrls <- runT . scatter $ wrap genSource <$> needFixing
+    fixedUrls <- runT . scatter $ _2 genSource <$> needFixing
     let fixedXml = foldr applyFix xmlTree fixedUrls
     return $ toWikitext fixedXml
-      where
-        wrap :: (a -> SourceT IO b) -> (c, a) -> SourceT IO (c, b)
-        wrap f (c, x) = (c, ) <$> f x
 
 substPreservingWS :: URI -> String -> String
 substPreservingWS uri str =
   let (pre, rest) = span isSpace str
       post = takeWhileEnd isSpace rest
-  in  pre ++ uriToString id uri post
+  in  pre ++ uriToString id (removeUnnecessaryPorts uri) post
+
+defaultPorts :: [(String, Int)]
+defaultPorts = first (`snoc` ':') <$> [ ("http", 80)
+                                      , ("https", 443)
+                                      , ("ftp", 21)
+                                      ]
+
+removeUnnecessaryPorts :: URI -> URI
+removeUnnecessaryPorts = removePortIfExists `applyFor` ((`lookup` defaultPorts) . uriScheme)
+
+removePortIfExists :: Int -> Endo URI
+removePortIfExists defaultPort =
+  Endo $ authority . _Just . port %~ (pure (Endo mempty) `applyFor` check)
+  where
+    check :: String -> Maybe ()
+    check = guard . (== ':' : show defaultPort)
+
+applyFor :: MonoFoldable mono => (Element mono -> Endo a) -> (a -> mono) -> a -> a
+applyFor f = (flip (appEndo . foldMap f) <*>)
 
 takeWhileEnd :: (a -> Bool) -> [a] -> [a]
-takeWhileEnd p = reverse . takeWhile p . reverse
+takeWhileEnd = (reversed %~) . takeWhile
