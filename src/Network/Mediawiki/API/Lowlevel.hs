@@ -3,7 +3,7 @@ module Network.Mediawiki.API.Lowlevel where
 
 import           ClassyPrelude
 import           Control.Lens hiding (unsnoc)
-import           Control.Lens.Text.Extras (delimited)
+import           Data.Text.Lens.Extras    (delimited)
 import           Data.Time.Clock          (DiffTime, secondsToDiffTime)
 import           Network.Wreq             (Options, Response, defaults)
 import           Network.Wreq.Lens        (param, responseBody)

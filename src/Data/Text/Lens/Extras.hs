@@ -1,5 +1,5 @@
 {-# LANGUAGE Rank2Types #-}
-module Control.Lens.Text.Extras where
+module Data.Text.Lens.Extras where
 
 import ClassyPrelude hiding (intercalate)
 import Control.Lens.Iso

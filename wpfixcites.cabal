@@ -18,7 +18,7 @@ library
                      , Network.Mediawiki.API.Lowlevel
                      , Text.Mediawiki.ParseTree
                      , Text.XML.HXT.PathFinder
-                     , Control.Lens.Text.Extras
+                     , Data.Text.Lens.Extras
   build-depends:       aeson >= 0.11.3.0 && < 0.12
                      , base >= 4.7 && < 5
                      , bytestring
