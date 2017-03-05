@@ -7,29 +7,28 @@
 module Text.Mediawiki.Wikipedia (fixCites) where
 
 import ClassyPrelude
-import Control.Lens.Fold ((^?))
-import Control.Lens.Iso (reversed)
+import Control.Lens.Getter ((^.))
+import Control.Lens.Iso (Iso', from)
+import Control.Lens.Lens (Lens')
 import Control.Lens.Operators ((&))
 import Control.Lens.Prism (_Just)
-import Control.Lens.Setter ((%~))
+import Control.Lens.Setter ((%~), (.~))
 import Control.Lens.TH (abbreviatedFields, makeLensesFor, makeLensesWith)
 import Control.Lens.Tuple (_2)
-import qualified Data.ByteString.Char8 as C
-import Data.Char (isSpace)
 import Data.Machine (construct, runT, SourceT, yield)
 import Data.Machine.Concurrent.Scatter (scatter)
 import Data.Monoid (Endo(..))
-import Data.Text (strip)
 import Data.Text.Lens (packed)
+import Data.Text.Lens.Extras (stripped)
 import Data.Tree.NTree.TypeDefs (NTree(..))
 import Network.Mediawiki.API (parseTree)
 import Network.Mediawiki.API.Lowlevel (APIConnection(..), defaultEndpoint)
 import Network.HTTP.Client
        (getUri, hrFinalRequest, Manager, newManager, parseRequest,
-        responseHeaders, withResponseHistory)
+        withResponseHistory)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.URI (URI(..), URIAuth(..), uriToString)
-import Network.Wreq.Session (Session, withAPISession)
+import Network.Wreq.Session (withAPISession)
 import Text.Mediawiki.ParseTree
 import Text.XML.HXT.PathFinder (findElements, hasLocalName, LocatedTree(..), Path(..))
 import Text.XML.HXT.DOM.TypeDefs (XmlTree, XNode(..))
@@ -55,7 +54,7 @@ handleMixedContent []  = Nothing
 handleMixedContent list = error $ "Don't know how to handle children: " ++ show list
 
 parseCiteJournalL :: TemplateInvocation -> Maybe CiteJournalL
-parseCiteJournalL ti@TemplateCall { templateName, arguments }
+parseCiteJournalL ti@TemplateCall { templateName }
   | eqStripped templateName "cite journal" = do
       urlL <- handleMixedContent =<< argument "url" ti
       doiL <- handleMixedContent =<< argument "doi" ti
@@ -79,6 +78,12 @@ resolveDOI manager doi = redirectTarget $ "http://dx.doi.org/" ++ doi
         where
           consume = return . getUri . hrFinalRequest
 
+mapLens :: Iso' s a -> Lens' a a -> Lens' s s
+mapLens iso lens = iso . lens . from iso
+
+strStripped :: Lens' String String
+strStripped = mapLens packed stripped
+
 fixCites :: String -> Text -> IO [Text]
 fixCites urlPrefix pageName = withAPISession $ \session' ->
   do
@@ -90,17 +95,12 @@ fixCites urlPrefix pageName = withAPISession $ \session' ->
         needFixing = extractL <$> filter ((urlPrefix `isPrefixOf`) . snd . urlL) citeJournals
         genSource :: CiteJournal -> SourceT IO String
         genSource CiteJournal { doi, url } = construct $ do
-          newUrl <- liftIO . resolveDOI manager $ doi & packed %~ strip
-          yield $ substPreservingWS newUrl url
+          newUrl <- liftIO $ resolveDOI manager (doi ^. strStripped)
+          let newUrlStr = uriToString id (removeUnnecessaryPorts newUrl) ""
+          yield $ url & strStripped .~ newUrlStr
     fixedUrls <- runT . scatter $ _2 genSource <$> needFixing
     let fixedXml = foldr applyFix xmlTree fixedUrls
     return $ toWikitext fixedXml
-
-substPreservingWS :: URI -> String -> String
-substPreservingWS uri str =
-  let (pre, rest) = span isSpace str
-      post = takeWhileEnd isSpace rest
-  in  pre ++ uriToString id (removeUnnecessaryPorts uri) post
 
 defaultPorts :: [(String, Int)]
 defaultPorts = first (`snoc` ':') <$> [ ("http", 80)
@@ -120,6 +120,3 @@ removePortIfExists defaultPort =
 
 applyFor :: MonoFoldable mono => (Element mono -> Endo a) -> (a -> mono) -> a -> a
 applyFor f = (flip (appEndo . foldMap f) <*>)
-
-takeWhileEnd :: (a -> Bool) -> [a] -> [a]
-takeWhileEnd = (reversed %~) . takeWhile
