@@ -4,6 +4,7 @@ module Text.Mediawiki.ParseTree where
 import ClassyPrelude
 import Data.Text (strip)
 import Data.Tree.NTree.TypeDefs (NTree(..))
+import Text.XML.HXT.DOM.QualifiedName (QName)
 import Text.XML.HXT.DOM.TypeDefs (XmlTree, XmlTrees, XNode(..))
 import Text.XML.HXT.PathFinder (hasLocalName, LocatedTree(..), number, Numbered, Path(..))
 
@@ -61,6 +62,7 @@ instance LocatingUnpickle TemplateInvocation where
                       }
   unpickleL _ = Nothing
 
+elemName :: NTree XNode -> Maybe QName
 elemName (NTree (XTag n _) _) = Just n
 elemName _ = Nothing
 

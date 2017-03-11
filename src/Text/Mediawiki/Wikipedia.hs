@@ -21,8 +21,8 @@ import Data.Monoid (Endo(..))
 import Data.Text.Lens (packed)
 import Data.Text.Lens.Extras (stripped)
 import Data.Tree.NTree.TypeDefs (NTree(..))
-import Network.Mediawiki.API (parseTree)
-import Network.Mediawiki.API.Lowlevel (APIConnection(..), defaultEndpoint)
+import Network.Mediawiki.API (parseTreeOfPage, parseTreeOfText)
+import Network.Mediawiki.API.Lowlevel (API, APIConnection(..), defaultEndpoint)
 import Network.HTTP.Client
        (getUri, hrFinalRequest, Manager, newManager, parseRequest,
         withResponseHistory)
@@ -30,6 +30,7 @@ import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.URI (URI(..), URIAuth(..), uriToString)
 import Network.Wreq.Session (withAPISession)
 import Text.Mediawiki.ParseTree
+import Text.Mediawiki.ParseTree.Ref (getText, refIso, refTraversal)
 import Text.XML.HXT.PathFinder (findElements, hasLocalName, LocatedTree(..), Path(..))
 import Text.XML.HXT.DOM.TypeDefs (XmlTree, XNode(..))
 
@@ -84,15 +85,26 @@ mapLens iso lens = iso . lens . from iso
 strStripped :: Lens' String String
 strStripped = mapLens packed stripped
 
+substRefElements :: XmlTree -> API XmlTree
+substRefElements = refTraversal . from refIso $ parseTreeOfText . pack . getText
+
+traverseWithSubtrees :: Monad m => (XmlTree -> m XmlTree) -> XmlTree -> m XmlTree
+traverseWithSubtrees f t = do
+  NTree x children <- f t
+  NTree x <$> traverse (traverseWithSubtrees f) children
+
+parseTreeWithRefs :: Text -> API XmlTree
+parseTreeWithRefs = traverseWithSubtrees substRefElements <=< parseTreeOfPage
+
 fixCites :: String -> Text -> IO [Text]
 fixCites urlPrefix pageName = withAPISession $ \session' ->
   do
     manager <- newManager tlsManagerSettings
-    xmlTree <- runReaderT (parseTree pageName) $ APIConnection defaultEndpoint id session'
+    xmlTree <- runReaderT (parseTreeWithRefs pageName) $ APIConnection defaultEndpoint id session'
     let templateXml = findElements (hasLocalName "template") xmlTree
         templateCalls = mapMaybe unpickleL templateXml
         citeJournals = mapMaybe parseCiteJournalL templateCalls
-        needFixing = extractL <$> filter ((urlPrefix `isPrefixOf`) . snd . urlL) citeJournals
+        needFixing = extractL <$> filter ((urlPrefix `isPrefixOf`) . (^. strStripped) . snd . urlL) citeJournals
         genSource :: CiteJournal -> SourceT IO String
         genSource CiteJournal { doi, url } = construct $ do
           newUrl <- liftIO $ resolveDOI manager (doi ^. strStripped)

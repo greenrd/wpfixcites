@@ -8,6 +8,7 @@ data WpFixCitesArgs = WpFixCitesArgs { urlPrefix :: String
                                      , pageName  :: String
                                      }
 
+urlPrefixOption :: Parser String
 urlPrefixOption =
   strOption
    ( long "url-prefix"
@@ -15,8 +16,8 @@ urlPrefixOption =
   <> metavar "URL-PREFIX"
   <> help "Operate on all URLs that start with URL-PREFIX, assuming them to be dead." )
 
-pageNameArg =
-  argument str (metavar "PAGENAME")
+pageNameArg :: Parser String
+pageNameArg = argument str (metavar "PAGENAME")
 
 myArgParser :: Parser WpFixCitesArgs
 myArgParser = WpFixCitesArgs <$> urlPrefixOption <*> pageNameArg
